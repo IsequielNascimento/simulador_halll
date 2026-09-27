@@ -2,7 +2,7 @@
 from ursina import Entity, Text, Vec4, camera, color
 from ursina.prefabs.slider import Slider
 
-from .config import B_MAX, B_MIN, CORRENTE_MAX_MA, CORRENTE_MIN_MA
+from .config import B_MAX, B_MIN, CORRENTE_MAX_MA, CORRENTE_MIN_MA, VETORES
 
 
 def formatar_tensao(v_volts):
@@ -63,8 +63,7 @@ class InterfaceSimulador:
 
     def _criar_legenda(self):
         Text(text='Vetores do eletron (e-)', position=(-0.85, 0.40), scale=1.05)
-        Text(text='v_e: velocidade', position=(-0.85, 0.36), color=color.lime)
-        Text(text='F_B: forca magnetica', position=(-0.85, 0.32), color=color.orange)
-        Text(text='B: campo magnetico', position=(-0.85, 0.28), color=color.azure)
+        for i, (rotulo, descricao, cor, z) in enumerate(VETORES.values()):
+            Text(text=f'{rotulo}: {descricao}', position=(-0.85, 0.36 - i * 0.04), color=cor)
         Text(text='Cruz: entrando no plano | Ponto: saindo do plano',
              position=(-0.85, 0.20), scale=0.75)

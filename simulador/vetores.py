@@ -3,7 +3,7 @@ import math
 
 from ursina import Entity, Text, Vec4, camera, clamp, color, load_model, scene, window
 
-from .config import PLACA_CENTRO_Z, PLACA_QUINA1, PLACA_X_MAX, PLACA_Z_MAX, PLACA_Z_MIN
+from .config import PLACA, VETORES
 from .fisica import direcoes_vetores_eletron
 
 
@@ -63,19 +63,15 @@ class VetoresEletron:
     """Tres indicadores ancorados a placa, legiveis de qualquer angulo."""
 
     def __init__(self):
-        altura = PLACA_QUINA1.y + 0.16
-        self.velocidade = IndicadorVetor(
-            'v_e', (PLACA_X_MAX + 0.48, altura, PLACA_CENTRO_Z), color.lime)
-        self.forca = IndicadorVetor(
-            'F_B', (PLACA_X_MAX + 0.48, altura, PLACA_Z_MIN - 0.48), color.orange)
-        self.campo = IndicadorVetor(
-            'B', (PLACA_X_MAX + 0.48, altura, PLACA_Z_MAX + 0.25), color.azure)
-        self.indicadores = (self.velocidade, self.forca, self.campo)
+        self.indicadores = {
+            chave: IndicadorVetor(rotulo, (PLACA.maximo.x + 0.48, PLACA.minimo.y + 0.16, z), cor)
+            for chave, (rotulo, descricao, cor, z) in VETORES.items()
+        }
 
     def _separar_indicadores(self):
         # Na vista lateral as ancoras podem se projetar sobre o mesmo ponto.
         # Separa os conjuntos icone/rotulo sem alterar as direcoes fisicas.
-        visiveis = [v.grupo for v in self.indicadores if v.grupo.enabled]
+        visiveis = [v.grupo for v in self.indicadores.values() if v.grupo.enabled]
         for grupo in visiveis:
             grupo.x = clamp(grupo.x, -window.aspect_ratio / 2 + 0.04,
                             window.aspect_ratio / 2 - 0.15)
@@ -92,9 +88,7 @@ class VetoresEletron:
                 grupo.y += deslocamento
 
     def update(self, sentido_movimento, sinal_polo, campo_ativo):
-        velocidade, campo, forca = direcoes_vetores_eletron(sentido_movimento, sinal_polo)
-        self.velocidade.update(velocidade, True)
-        self.forca.update(forca, campo_ativo)
-        self.campo.update(campo, campo_ativo)
+        direcoes = direcoes_vetores_eletron(sentido_movimento, sinal_polo)
+        for chave, direcao in zip(('velocidade', 'campo', 'forca'), direcoes):
+            self.indicadores[chave].update(direcao, chave == 'velocidade' or campo_ativo)
         self._separar_indicadores()
-

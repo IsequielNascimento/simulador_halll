@@ -4,7 +4,7 @@ from ursina import EditorCamera, Entity, camera, color, invoke, time
 from . import config
 from .fisica import calcular_tensao_hall
 from .interface import InterfaceSimulador
-from .particulas import SistemaBolinhasCircuito, SistemaBolinhasHall
+from .particulas import Percurso, SistemaBolinhasCircuito, SistemaBolinhasHall
 from .vetores import VetoresEletron
 
 
@@ -21,17 +21,9 @@ class SimulacaoHall(Entity):
         self._criar_cena()
         self.interface = InterfaceSimulador()
         self.vetores_eletron = VetoresEletron()
-        self.sistema_circuito = SistemaBolinhasCircuito(config.CAMINHO)
-        self.sistema_hall = SistemaBolinhasHall(
-            config.CAMINHO,
-            indice_segmento_placa=3,
-            x_centro=config.X_CENTRO_CAMINHO,
-            x_min=config.PLACA_X_MIN,
-            x_max=config.PLACA_X_MAX,
-            z_min=config.PLACA_Z_MIN,
-            z_max=config.PLACA_Z_MAX,
-            b_max_mt=config.B_MAX,
-        )
+        percurso = Percurso(config.CAMINHO)
+        self.sistema_circuito = SistemaBolinhasCircuito(percurso)
+        self.sistema_hall = SistemaBolinhasHall(percurso, config.PLACA, config.B_MAX)
         self.sistema_atual = self.sistema_circuito
 
     def _criar_cena(self):
@@ -41,7 +33,7 @@ class SimulacaoHall(Entity):
         self.modelo = Entity(model='models/placa_bateria_fio.glb', scale=0.02)
         self.chao = Entity(model='plane', scale=20, color=color.dark_gray, y=-1)
         self.ima = Entity(model='models/ima.glb', scale=0.02,
-                          position=(config.PLACA_CENTRO_X, 2.5, config.PLACA_CENTRO_Z))
+                          position=(config.PLACA.centro_x, 2.5, config.PLACA.centro_z))
         # Centraliza o pivo para o ima girar sobre si mesmo.
         limites = self.ima.model.getTightBounds()
         if limites:
@@ -68,7 +60,7 @@ class SimulacaoHall(Entity):
         self.magneto_baixo = not self.magneto_baixo
         altura = config.Y_IMA_BAIXO if self.magneto_baixo else config.Y_IMA_CIMA
         self.ima.animate_position(
-            (config.PLACA_CENTRO_X, altura, config.PLACA_CENTRO_Z), duration=1)
+            (config.PLACA.centro_x, altura, config.PLACA.centro_z), duration=1)
         if self.magneto_baixo:
             self.sistema_circuito.set_ativo(False)
             invoke(self._ativar_hall, delay=1)

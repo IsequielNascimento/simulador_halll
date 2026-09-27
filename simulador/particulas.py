@@ -9,55 +9,69 @@ from .config import (
 )
 
 
-class SistemaBolinhasCircuito:
-    """Bolinhas seguindo o laço reto do circuito (sem efeito do ímã)."""
+class Percurso:
+    """Segmentos e interpolacao de um caminho fechado, compartilhados pelos sistemas."""
 
-    def __init__(self, caminho, espacamento=0.25, cor=color.red):
-        self.caminho = caminho
-        self.ativo = True
-        self.progresso = 0
-
+    def __init__(self, pontos):
+        self.pontos = pontos
         self.segmentos = []
+        self.inicios = []
         self.comprimento_total = 0
-        for i in range(len(caminho)):
-            p1 = caminho[i]
-            p2 = caminho[(i + 1) % len(caminho)]
-            d = (p2 - p1).length()
-            self.segmentos.append((p1, p2, d))
-            self.comprimento_total += d
+        for i, p1 in enumerate(pontos):
+            p2 = pontos[(i + 1) % len(pontos)]
+            comprimento = (p2 - p1).length()
+            self.inicios.append(self.comprimento_total)
+            self.segmentos.append((p1, p2, comprimento))
+            self.comprimento_total += comprimento
 
-        n_bolinhas = max(1, int(self.comprimento_total / espacamento))
+    def intervalo(self, indice):
+        inicio = self.inicios[indice]
+        return inicio, inicio + self.segmentos[indice][2]
+
+    def posicao(self, distancia):
+        distancia %= self.comprimento_total
+        for inicio, (p1, p2, comprimento) in zip(self.inicios, self.segmentos):
+            if inicio + comprimento >= distancia:
+                t = (distancia - inicio) / comprimento if comprimento > 0 else 0
+                return p1 + (p2 - p1) * t
+        return self.pontos[0]
+
+
+class SistemaBolinhasCircuito:
+    """Criacao, visibilidade e movimento comuns aos dois sistemas de particulas."""
+
+    def __init__(self, percurso, espacamento=0.25, cor=color.red, ativo=True):
+        self.percurso = percurso
+        self.ativo = ativo
+        self.progresso = 0
         self.bolinhas = []
-        for i in range(n_bolinhas):
+        for i in range(max(1, int(percurso.comprimento_total / espacamento))):
             offset = i * espacamento
-            b = Entity(model='sphere', scale=0.10, color=cor,
-                       position=self._posicao_no_caminho(offset))
-            self.bolinhas.append({'entity': b, 'offset': offset})
+            entidade = Entity(model='sphere', scale=0.10, color=cor, enabled=ativo,
+                              position=self._posicao_no_caminho(offset))
+            self.bolinhas.append({'entity': entidade, 'offset': offset, 'progresso': offset})
 
     def _posicao_no_caminho(self, distancia):
-        distancia = distancia % self.comprimento_total
-        acumulado = 0
-        for p1, p2, d in self.segmentos:
-            if acumulado + d >= distancia:
-                t = (distancia - acumulado) / d if d > 0 else 0
-                return p1 + (p2 - p1) * t
-            acumulado += d
-        return self.caminho[0]
+        return self.percurso.posicao(distancia)
 
     def set_ativo(self, ativo):
         self.ativo = ativo
-        for b in self.bolinhas:
-            b['entity'].enabled = ativo
+        for bola in self.bolinhas:
+            bola['entity'].enabled = ativo
 
     def update(self, velocidade, delta_t):
         if not self.ativo:
             return
-        self.progresso += velocidade * delta_t
-        for b in self.bolinhas:
-            b['entity'].position = self._posicao_no_caminho(self.progresso + b['offset'])
+        deslocamento = velocidade * delta_t
+        self.progresso += deslocamento
+        for bola in self.bolinhas:
+            bola['entity'].position = self._avancar_bola(bola, deslocamento)
+
+    def _avancar_bola(self, bola, deslocamento):
+        return self._posicao_no_caminho(self.progresso + bola['offset'])
 
 
-class SistemaBolinhasHall:
+class SistemaBolinhasHall(SistemaBolinhasCircuito):
     """Trajetorias esquematicas com desvio lateral e marcadores nas bordas.
 
     O desvio usa a raiz das fracoes de corrente/campo e saturacao exponencial.
@@ -67,19 +81,13 @@ class SistemaBolinhasHall:
     K_SATURACAO = 4.0
     MARGEM_PAREDE = 0.98  # o clamp final (x_min/x_max) ja protege 100% do fisico
 
-    def __init__(self, caminho, indice_segmento_placa, x_centro, x_min, x_max,
-                 z_min, z_max, b_max_mt, espacamento=0.25, cor=color.red):
-        self.caminho = caminho
-        self.indice_segmento_placa = indice_segmento_placa
-        self.x_centro = x_centro
-        self.x_min = x_min
-        self.x_max = x_max
+    def __init__(self, percurso, placa, b_max_mt, espacamento=0.25, cor=color.red):
+        self.placa = placa
+        self.dist_inicio_placa, self.dist_fim_placa = percurso.intervalo(placa.segmento_caminho)
         self.b_max_mt = b_max_mt
         self.campo_b_mt = 0       # ja vem com sinal (polo invertido = negativo)
         self.frac_corrente = 0    # 0 a 1, proporcao da corrente atual
         self.sentido = 1          # 1 = corrente normal, -1 = invertida
-        self.ativo = False
-        self.progresso = 0
 
         # marcadores fixos de acumulacao: ate max_acumulados_atual vermelhos na parede
         # que o feixe atinge, e o mesmo tanto de azuis na parede oposta (o teto cresce
@@ -88,43 +96,24 @@ class SistemaBolinhasHall:
         self.contagem_acumulada = 0
         self.corrente_mA = 20        # espelha o default do slider; atualizado a cada frame
         self.max_acumulados_atual = self._calcular_max_acumulados()
-        self.marcador_zs = [z_min + (i + 1) * (z_max - z_min) / (MAX_MARCADORES_POSSIVEL + 1)
+        self.marcador_zs = [placa.minimo.z + (i + 1) * (placa.maximo.z - placa.minimo.z) / (MAX_MARCADORES_POSSIVEL + 1)
                             for i in range(MAX_MARCADORES_POSSIVEL)]
         self.marcadores_vermelhos = [Entity(model='sphere', scale=0.09, color=color.red, enabled=False)
                                       for _ in range(MAX_MARCADORES_POSSIVEL)]
         self.marcadores_azuis = [Entity(model='sphere', scale=0.09, color=color.blue, enabled=False)
                                   for _ in range(MAX_MARCADORES_POSSIVEL)]
 
-        self.segmentos = []
-        acumulado = 0
-        for i in range(len(caminho)):
-            p1 = caminho[i]
-            p2 = caminho[(i + 1) % len(caminho)]
-            d = (p2 - p1).length()
-            self.segmentos.append((p1, p2, d))
-            if i == indice_segmento_placa:
-                self.dist_inicio_placa = acumulado
-                self.dist_fim_placa = acumulado + d
-            acumulado += d
-        self.comprimento_total = acumulado
-
-        n_bolinhas = max(1, int(self.comprimento_total / espacamento))
-        self.bolinhas = []
-        for i in range(n_bolinhas):
-            offset = i * espacamento
-            b = Entity(model='sphere', scale=0.10, color=cor,
-                       position=self._posicao_no_caminho(offset))
-            b.enabled = False
-            self.bolinhas.append({'entity': b, 'progresso': offset})
+        super().__init__(percurso, espacamento, cor, ativo=False)
 
     def _posicao_no_caminho(self, distancia):
-        distancia = distancia % self.comprimento_total
+        distancia_original = distancia
+        distancia = distancia % self.percurso.comprimento_total
 
         if self.dist_inicio_placa <= distancia <= self.dist_fim_placa:
             t = (distancia - self.dist_inicio_placa) / (self.dist_fim_placa - self.dist_inicio_placa)
             t_local = t if self.sentido > 0 else (1 - t)
 
-            p1, p2, _ = self.segmentos[self.indice_segmento_placa]
+            p1, p2, _ = self.percurso.segmentos[self.placa.segmento_caminho]
             z = p1.z + (p2.z - p1.z) * t
 
             frac_b = self.campo_b_mt / self.b_max_mt
@@ -135,20 +124,15 @@ class SistemaBolinhasHall:
 
             curva = 1 - math.exp(-self.K_SATURACAO * t_local)  # satura rapido, "cola" na parede
 
-            alcance_max = self.MARGEM_PAREDE * (self.x_max - self.x_centro)
+            alcance_max = self.MARGEM_PAREDE * (self.placa.maximo.x - self.placa.eixo_corrente)
             # Eletron: q < 0. Com v em +Z e B em -Y (N voltado para
             # a placa), q(v x B) aponta para -X.
             desvio = -self.sentido * frac_hall * curva * alcance_max
-            x = clamp(self.x_centro + desvio, self.x_min, self.x_max)
+            x = clamp(self.placa.eixo_corrente + desvio, self.placa.minimo.x, self.placa.maximo.x)
             return Vec3(x, p1.y, z)
 
-        acumulado = 0
-        for p1, p2, d in self.segmentos:
-            if acumulado + d >= distancia:
-                t = (distancia - acumulado) / d if d > 0 else 0
-                return p1 + (p2 - p1) * t
-            acumulado += d
-        return self.caminho[0]
+        # Normaliza apenas uma vez, preservando o arredondamento no fechamento do circuito.
+        return super()._posicao_no_caminho(distancia_original)
 
     def _calcular_max_acumulados(self):
         # 1 faixa (MARCADORES_POR_FAIXA marcadores) garantida mesmo com pouca corrente;
@@ -157,9 +141,9 @@ class SistemaBolinhasHall:
         return faixas * MARCADORES_POR_FAIXA
 
     def _atualizar_marcadores(self):
-        y = self.segmentos[self.indice_segmento_placa][0].y
-        x_vermelho = self.x_max if self.lado_atual == 'max' else self.x_min
-        x_azul = self.x_min if self.lado_atual == 'max' else self.x_max
+        y = self.percurso.segmentos[self.placa.segmento_caminho][0].y
+        x_vermelho = self.placa.maximo.x if self.lado_atual == 'max' else self.placa.minimo.x
+        x_azul = self.placa.minimo.x if self.lado_atual == 'max' else self.placa.maximo.x
         for i in range(len(self.marcadores_vermelhos)):
             ativo = i < self.contagem_acumulada
             self.marcadores_vermelhos[i].enabled = ativo
@@ -169,9 +153,7 @@ class SistemaBolinhasHall:
                 self.marcadores_azuis[i].position = Vec3(x_azul, y, self.marcador_zs[i])
 
     def set_ativo(self, ativo):
-        self.ativo = ativo
-        for b in self.bolinhas:
-            b['entity'].enabled = ativo
+        super().set_ativo(ativo)
         if not ativo:
             # desligou o sistema (ima subiu) -- zera o acumulo tambem
             self.lado_atual = None
@@ -199,23 +181,25 @@ class SistemaBolinhasHall:
                 self.contagem_acumulada = 0
                 self._atualizar_marcadores()
 
-        for bola in self.bolinhas:
-            bola['progresso'] += velocidade * delta_t
-            pos = self._posicao_no_caminho(bola['progresso'])
+        super().update(velocidade, delta_t)
 
-            # bateu na parede de verdade (x_min ou x_max) -> volta pra parte_preta
-            bateu_na_parede = (math.isclose(pos.x, self.x_min, abs_tol=1e-3)
-                                or math.isclose(pos.x, self.x_max, abs_tol=1e-3))
-            if bateu_na_parede:
-                lado = 'max' if math.isclose(pos.x, self.x_max, abs_tol=1e-3) else 'min'
-                if lado != self.lado_atual:
-                    self.lado_atual = lado
-                    self.contagem_acumulada = 0
-                self.contagem_acumulada = min(self.max_acumulados_atual, self.contagem_acumulada + 1)
-                self._atualizar_marcadores()
+    def _avancar_bola(self, bola, deslocamento):
+        bola['progresso'] += deslocamento
+        pos = self._posicao_no_caminho(bola['progresso'])
 
-                bola['progresso'] = 0
-                pos = self.caminho[0]  # parte_preta
+        # bateu na parede de verdade (x_min ou x_max) -> volta pra parte_preta
+        bateu_na_parede = (math.isclose(pos.x, self.placa.minimo.x, abs_tol=1e-3)
+                            or math.isclose(pos.x, self.placa.maximo.x, abs_tol=1e-3))
+        if bateu_na_parede:
+            lado = 'max' if math.isclose(pos.x, self.placa.maximo.x, abs_tol=1e-3) else 'min'
+            if lado != self.lado_atual:
+                self.lado_atual = lado
+                self.contagem_acumulada = 0
+            self.contagem_acumulada = min(self.max_acumulados_atual, self.contagem_acumulada + 1)
+            self._atualizar_marcadores()
 
-            bola['entity'].position = pos
+            bola['progresso'] = 0
+            pos = self.percurso.pontos[0]  # parte_preta
+
+        return pos
 

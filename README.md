@@ -45,6 +45,12 @@ Importar `main` não abre a janela. O loop começa apenas ao executar o programa
 Para mudar textos e controles, edite `interface.py`; para ajustar parâmetros,
 edite `config.py`.
 
+Em `config.py`, `PLACA` reúne os limites, a espessura e o eixo da corrente;
+`VETORES` define os rótulos, descrições, cores e posições usados pelos indicadores
+e pela legenda. Os dois sistemas de partículas compartilham um `Percurso` e a
+mesma criação e atualização das bolinhas; o sistema Hall acrescenta o desvio e
+o acúmulo nas bordas.
+
 ## Gerar o executável
 
 ```powershell
