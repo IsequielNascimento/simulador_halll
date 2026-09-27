@@ -12,6 +12,7 @@ if hasattr(sys, '_MEIPASS'):
 
 # ---- constantes ajustaveis ----
 FATOR_DEFLEXAO_VISUAL = 2  # exagero de proposito pra ficar visivel; 1.0 = fisicamente "correto"
+COOLDOWN_TECLAS = 1.0        # segundos de espera entre acionar M / I / F (evita clique duplo/simultaneo)
 MARCADORES_POR_FAIXA = 3     # quantas bolinhas novas liberam a cada faixa de corrente atingida
 FAIXA_CORRENTE_MA = 20       # tamanho de cada faixa de corrente, em mA
 CORRENTE_MIN_MA = 2          # espelha o min do slider de corrente (definido mais abaixo)
@@ -357,13 +358,51 @@ def inverter_corrente():
     texto_sentido.text = 'Sentido: normal' if sentido_corrente > 0 else 'Sentido: invertido'
 
 
+# ---- popup de comandos (H mostra/esconde) ----
+popup_comandos = Entity(parent=camera.ui, enabled=True)
+Entity(parent=popup_comandos, model='quad', scale=(0.6, 0.42),
+       color=color.rgba(0, 0, 0, 210), z=0.1)
+Text(
+    parent=popup_comandos,
+    text=('COMANDOS\n\n'
+          'M - descer / subir o ima\n'
+          'I - inverter sentido da corrente\n'
+          'F - virar o ima (troca N/S)\n\n'
+          'H - mostrar / esconder esta ajuda'),
+    position=(-0.26, 0.17), scale=1.2, line_height=1.7
+)
+
+# ---- cooldown das teclas M/I/F, mostrado no canto inferior esquerdo ----
+cooldown_restante = 0.0
+texto_cooldown = Text(text='', position=(-0.85, -0.47), scale=1.1, color=color.yellow)
+
+
+def pode_acionar():
+    return cooldown_restante <= 0
+
+
+def iniciar_cooldown():
+    global cooldown_restante
+    cooldown_restante = COOLDOWN_TECLAS
+
+
 def input(key):
+    if key == 'h':
+        popup_comandos.enabled = not popup_comandos.enabled
+        return
+
+    if key in ('m', 'i', 'f') and not pode_acionar():
+        return  # ainda em cooldown -- ignora, impede acionar mais de um por vez
+
     if key == 'm':
         acionar_ima()
+        iniciar_cooldown()
     if key == 'i':
         inverter_corrente()
+        iniciar_cooldown()
     if key == 'f':
         flip_ima()
+        iniciar_cooldown()
 
 
 # ---- controles, parte inferior da tela ----
@@ -395,6 +434,11 @@ VELOCIDADE_MAX = 3.0
 
 
 def update():
+    global cooldown_restante
+    if cooldown_restante > 0:
+        cooldown_restante = max(0.0, cooldown_restante - time.dt)
+    texto_cooldown.text = f'Cooldown: {cooldown_restante:.1f}s' if cooldown_restante > 0 else ''
+
     corrente_mA = corrente_slider.value
     texto_corrente.text = f'Corrente: {corrente_mA:.0f} mA'
     frac = (corrente_mA - CORRENTE_MIN_MA) / (CORRENTE_MAX_MA - CORRENTE_MIN_MA)
