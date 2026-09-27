@@ -11,6 +11,7 @@ def criar_aplicacao(**opcoes):
     """Cria o motor e a simulacao sem iniciar o loop de eventos."""
     raiz = Path(getattr(sys, '_MEIPASS', Path(__file__).resolve().parent.parent))
     application.asset_folder = raiz
+    opcoes.setdefault('development_mode', False)
     app = Ursina(**opcoes)
     simulacao = SimulacaoHall()
     return app, simulacao

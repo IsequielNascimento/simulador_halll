@@ -25,6 +25,8 @@ python -m venv .venv
 
 Os controles na tela ajustam a corrente e o campo magnético. Os três vetores
 alternam entre seta, cruz e ponto conforme a orientação da câmera.
+A ajuda inicia fechada; pressione `H` para consultar os comandos. Os sliders
+ficam juntos na faixa inferior, com os valores exibidos apenas nos rótulos.
 Os indicadores ficam em uma coluna fixa à direita, na ordem da legenda,
 sem trocar de posição ao girar ou aproximar a câmera. Apenas a orientação
 das setas e os símbolos de entrada/saída acompanham o ângulo observado.
