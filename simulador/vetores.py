@@ -1,18 +1,17 @@
 """Indicadores dos vetores e projecao dependente da camera."""
 import math
 
-from ursina import Entity, Text, Vec4, camera, clamp, color, load_model, scene, window
+from ursina import Entity, Text, Vec4, camera, color, load_model, scene, window
 
-from .config import PLACA, VETORES
+from .config import VETORES
 from .fisica import direcoes_vetores_eletron
 
 
 class IndicadorVetor:
     """GLBs pequenos na UI, orientados pela projecao de uma direcao 3D."""
 
-    def __init__(self, nome, posicao, cor):
+    def __init__(self, nome, cor):
         self.nome = nome
-        self.ancora = Entity(position=posicao)
         self.grupo = Entity(parent=camera.ui)
         self.giro = Entity(parent=self.grupo)
         self.seta = self._modelo('Arrow', self.giro, cor, 0.045)
@@ -55,40 +54,27 @@ class IndicadorVetor:
         texto = self.nome if ativo else f'{self.nome} = 0'
         if self.rotulo.text != texto:
             self.rotulo.text = texto
-        self.grupo.enabled = camera.getRelativePoint(scene, self.ancora.position).z > 0
-        self.grupo.position = self.ancora.screen_position
 
 
 class VetoresEletron:
-    """Tres indicadores ancorados a placa, legiveis de qualquer angulo."""
+    """Coluna fixa na UI; somente a orientacao dos vetores segue a camera."""
 
     def __init__(self):
         self.indicadores = {
-            chave: IndicadorVetor(rotulo, (PLACA.maximo.x + 0.48, PLACA.minimo.y + 0.16, z), cor)
-            for chave, (rotulo, descricao, cor, z) in VETORES.items()
+            chave: IndicadorVetor(rotulo, cor)
+            for chave, (rotulo, descricao, cor) in VETORES.items()
         }
+        self._posicionar_indicadores()
 
-    def _separar_indicadores(self):
-        # Na vista lateral as ancoras podem se projetar sobre o mesmo ponto.
-        # Separa os conjuntos icone/rotulo sem alterar as direcoes fisicas.
-        visiveis = [v.grupo for v in self.indicadores.values() if v.grupo.enabled]
-        for grupo in visiveis:
-            grupo.x = clamp(grupo.x, -window.aspect_ratio / 2 + 0.04,
-                            window.aspect_ratio / 2 - 0.15)
-            grupo.y = clamp(grupo.y, -0.08, 0.38)
-        posicionados = []
-        for grupo in sorted(visiveis, key=lambda g: g.y, reverse=True):
-            for anterior in posicionados:
-                if abs(grupo.x - anterior.x) < 0.16 and abs(grupo.y - anterior.y) < 0.06:
-                    grupo.y = anterior.y - 0.06
-            posicionados.append(grupo)
-        if visiveis:
-            deslocamento = max(0, -0.08 - min(g.y for g in visiveis))
-            for grupo in visiveis:
-                grupo.y += deslocamento
+    def _posicionar_indicadores(self):
+        # Reserva espaco para icone, rotulo e margem direita. A ordem da
+        # legenda permanece estavel ao orbitar, dar zoom ou mover a camera.
+        x = window.aspect_ratio / 2 - 0.22
+        for linha, indicador in enumerate(self.indicadores.values()):
+            indicador.grupo.position = (x, 0.10 - linha * 0.075, 0)
 
     def update(self, sentido_movimento, sinal_polo, campo_ativo):
         direcoes = direcoes_vetores_eletron(sentido_movimento, sinal_polo)
         for chave, direcao in zip(('velocidade', 'campo', 'forca'), direcoes):
             self.indicadores[chave].update(direcao, chave == 'velocidade' or campo_ativo)
-        self._separar_indicadores()
+        self._posicionar_indicadores()

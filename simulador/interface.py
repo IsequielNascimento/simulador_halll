@@ -63,7 +63,7 @@ class InterfaceSimulador:
 
     def _criar_legenda(self):
         Text(text='Vetores do eletron (e-)', position=(-0.85, 0.40), scale=1.05)
-        for i, (rotulo, descricao, cor, z) in enumerate(VETORES.values()):
+        for i, (rotulo, descricao, cor) in enumerate(VETORES.values()):
             Text(text=f'{rotulo}: {descricao}', position=(-0.85, 0.36 - i * 0.04), color=cor)
         Text(text='Cruz: entrando no plano | Ponto: saindo do plano',
              position=(-0.85, 0.20), scale=0.75)

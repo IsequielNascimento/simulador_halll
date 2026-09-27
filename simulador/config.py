@@ -52,10 +52,10 @@ class Placa:
 
 PLACA = Placa(Vec3(0.208, 0.2, -0.637), Vec3(1.346, 0.2, 0.906))
 
-# Chave: (rotulo, descricao, cor, coordenada Z da ancora).
-# A ordem tambem define a legenda e a prioridade de separacao na tela.
+# Chave: (rotulo, descricao, cor).
+# A ordem define a legenda e as linhas da coluna de vetores na tela.
 VETORES = {
-    'velocidade': ('v_e', 'velocidade', color.lime, PLACA.centro_z),
-    'forca': ('F_B', 'forca magnetica', color.orange, PLACA.minimo.z - 0.48),
-    'campo': ('B', 'campo magnetico', color.azure, PLACA.maximo.z + 0.25),
+    'velocidade': ('v_e', 'velocidade', color.lime),
+    'forca': ('F_B', 'forca magnetica', color.orange),
+    'campo': ('B', 'campo magnetico', color.azure),
 }
