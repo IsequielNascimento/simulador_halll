@@ -26,7 +26,9 @@ MAX_MARCADORES_POSSIVEL = (CORRENTE_MAX_MA // FAIXA_CORRENTE_MA) * MARCADORES_PO
 
 
 app = Ursina()
-EditorCamera()
+camera_editor = EditorCamera(rotation=(45, 0, 0), position=(0.35, -0.4, 0))
+camera.z = -13
+camera_editor.target_z = camera.z
 
 modelo = Entity(
     model='models/placa_bateria_fio.glb',
@@ -170,7 +172,9 @@ class SistemaBolinhasHall:
             curva = 1 - math.exp(-self.K_SATURACAO * t_local)  # satura rapido, "cola" na parede
 
             alcance_max = self.MARGEM_PAREDE * (self.x_max - self.x_centro)
-            desvio = self.sentido * frac_hall * curva * alcance_max
+            # Eletron: q < 0. Com v em +Z e B em -Y (N voltado para
+            # a placa), q(v x B) aponta para -X.
+            desvio = -self.sentido * frac_hall * curva * alcance_max
             x = clamp(self.x_centro + desvio, self.x_min, self.x_max)
             return Vec3(x, p1.y, z)
 
@@ -278,6 +282,115 @@ PLACA_CENTRO_Z = (PLACA_Z_MIN + PLACA_Z_MAX) / 2
 
 X_CENTRO_CAMINHO = 0.811  # x do trecho reto de entrada/saida da corrente na placa
 B_MIN, B_MAX = 0, 200     # mT -- ordem de grandeza de um ima de neodimio pequeno perto da superficie
+
+
+def direcoes_vetores_eletron(sentido_movimento, sinal_polo):
+    """Direcoes na placa XZ; o polo N original aponta para baixo (-Y)."""
+    velocidade = Vec3(0, 0, sentido_movimento)
+    campo = Vec3(0, -sinal_polo, 0)
+    forca = -velocidade.cross(campo)  # carga negativa do eletron
+    return velocidade, campo, forca
+
+
+class IndicadorVetor:
+    """GLBs pequenos na UI, orientados pela projecao de uma direcao 3D."""
+
+    def __init__(self, nome, posicao, cor):
+        self.nome = nome
+        self.ancora = Entity(position=posicao)
+        self.grupo = Entity(parent=camera.ui)
+        self.giro = Entity(parent=self.grupo)
+        self.seta = self._modelo('Arrow', self.giro, cor, 0.045)
+        # A ponta importada e -Z. Deitada em XY, passa a apontar para +Y.
+        self.seta.rotation_x = 90
+        self.entrada = self._modelo('VectorIn', self.grupo, cor, 0.030)
+        self.saida = self._modelo('VectorOut', self.grupo, cor, 0.030)
+        self.fundo = Entity(parent=self.grupo, model='quad',
+                            position=(0.079, 0, 0.01), scale=(0.105, 0.035),
+                            color=Vec4(0.047, 0.063, 0.086, 0.96))
+        Entity(parent=self.grupo, model='quad', position=(0.028, 0, -0.01),
+               scale=(0.003, 0.035), color=cor)
+        self.rotulo = Text(parent=self.grupo, text=nome, color=color.white,
+                           position=(0.079, 0, -0.02), origin=(0, 0), scale=0.85)
+        self.modo = 'seta'
+
+    @staticmethod
+    def _modelo(nome, pai, cor, tamanho):
+        entidade = Entity(parent=pai,
+                          model=load_model(f'models/{nome}.glb', use_deepcopy=True),
+                          color=cor, unlit=True, double_sided=True)
+        minimo, maximo = entidade.model.getTightBounds()
+        entidade.model.setPos(-(minimo + maximo) / 2)
+        entidade.scale = tamanho / max(maximo - minimo)
+        return entidade
+
+    def update(self, direcao, ativo):
+        local = camera.getRelativeVector(scene, direcao).normalized()
+        # Histerese: entra no modo ponto/cruz a ~28 graus do eixo visual,
+        # e so volta a seta alem de ~35 graus, evitando piscadas no limite.
+        limite = 0.82 if self.modo in ('entrada', 'saida') else 0.88
+        if abs(local.z) >= limite:
+            self.modo = 'entrada' if local.z > 0 else 'saida'
+        else:
+            self.modo = 'seta'
+            self.giro.rotation_z = math.degrees(math.atan2(local.x, local.y))
+        self.seta.enabled = ativo and self.modo == 'seta'
+        self.entrada.enabled = ativo and self.modo == 'entrada'
+        self.saida.enabled = ativo and self.modo == 'saida'
+        texto = self.nome if ativo else f'{self.nome} = 0'
+        if self.rotulo.text != texto:
+            self.rotulo.text = texto
+        self.grupo.enabled = camera.getRelativePoint(scene, self.ancora.position).z > 0
+        self.grupo.position = self.ancora.screen_position
+
+
+class VetoresEletron:
+    """Tres indicadores ancorados a placa, legiveis de qualquer angulo."""
+
+    def __init__(self):
+        altura = PLACA_QUINA1.y + 0.16
+        self.velocidade = IndicadorVetor(
+            'v_e', (PLACA_X_MAX + 0.48, altura, PLACA_CENTRO_Z), color.lime)
+        self.forca = IndicadorVetor(
+            'F_B', (PLACA_X_MAX + 0.48, altura, PLACA_Z_MIN - 0.48), color.orange)
+        self.campo = IndicadorVetor(
+            'B', (PLACA_X_MAX + 0.48, altura, PLACA_Z_MAX + 0.25), color.azure)
+        self.indicadores = (self.velocidade, self.forca, self.campo)
+        Text(text='Vetores do eletron (e-)', position=(-0.85, 0.40), scale=1.05)
+        Text(text='v_e: velocidade', position=(-0.85, 0.36), color=color.lime)
+        Text(text='F_B: forca magnetica', position=(-0.85, 0.32), color=color.orange)
+        Text(text='B: campo magnetico', position=(-0.85, 0.28), color=color.azure)
+        Text(text='Cruz: entrando no plano | Ponto: saindo do plano',
+             position=(-0.85, 0.20), scale=0.75)
+
+    def _separar_indicadores(self):
+        # Na vista lateral as ancoras podem se projetar sobre o mesmo ponto.
+        # Separa os conjuntos icone/rotulo sem alterar as direcoes fisicas.
+        visiveis = [v.grupo for v in self.indicadores if v.grupo.enabled]
+        for grupo in visiveis:
+            grupo.x = clamp(grupo.x, -window.aspect_ratio / 2 + 0.04,
+                            window.aspect_ratio / 2 - 0.15)
+            grupo.y = clamp(grupo.y, -0.08, 0.38)
+        posicionados = []
+        for grupo in sorted(visiveis, key=lambda g: g.y, reverse=True):
+            for anterior in posicionados:
+                if abs(grupo.x - anterior.x) < 0.16 and abs(grupo.y - anterior.y) < 0.06:
+                    grupo.y = anterior.y - 0.06
+            posicionados.append(grupo)
+        if visiveis:
+            deslocamento = max(0, -0.08 - min(g.y for g in visiveis))
+            for grupo in visiveis:
+                grupo.y += deslocamento
+
+    def update(self, sentido_movimento, sinal_polo, campo_ativo):
+        velocidade, campo, forca = direcoes_vetores_eletron(sentido_movimento, sinal_polo)
+        self.velocidade.update(velocidade, True)
+        self.forca.update(forca, campo_ativo)
+        self.campo.update(campo, campo_ativo)
+        self._separar_indicadores()
+
+
+vetores_eletron = VetoresEletron()
 
 sistema_circuito = SistemaBolinhasCircuito(caminho)
 sistema_hall = SistemaBolinhasHall(
@@ -460,6 +573,10 @@ def update():
     texto_voltimetro.text = f'Voltimetro (V_H): {formatar_tensao(v_hall)}'
 
     sistema_atual.update(velocidade)
+    vetores_eletron.update(
+        sentido_corrente, sinal_polo,
+        magneto_baixo and sistema_hall.ativo and campo_mt > 0,
+    )
 
 
 app.run()
