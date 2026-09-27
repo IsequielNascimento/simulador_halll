@@ -1,4 +1,3 @@
-"""Indicadores dos vetores e projecao dependente da camera."""
 import math
 
 from ursina import Entity, Text, Vec4, camera, color, load_model, scene, window
@@ -8,14 +7,14 @@ from .fisica import direcoes_vetores_eletron
 
 
 class IndicadorVetor:
-    """GLBs pequenos na UI, orientados pela projecao de uma direcao 3D."""
-
+    # region Icone e rotulo do vetor
+    # A seta importada aponta para -Z; o giro de 90 graus a coloca em +Y na interface.
     def __init__(self, nome, cor):
         self.nome = nome
         self.grupo = Entity(parent=camera.ui)
         self.giro = Entity(parent=self.grupo)
         self.seta = self._modelo('Arrow', self.giro, cor, 0.045)
-        # A ponta importada e -Z. Deitada em XY, passa a apontar para +Y.
+
         self.seta.rotation_x = 90
         self.entrada = self._modelo('VectorIn', self.grupo, cor, 0.030)
         self.saida = self._modelo('VectorOut', self.grupo, cor, 0.030)
@@ -27,7 +26,10 @@ class IndicadorVetor:
         self.rotulo = Text(parent=self.grupo, text=nome, color=color.white,
                            position=(0.079, 0, -0.02), origin=(0, 0), scale=0.85)
         self.modo = 'seta'
+    # endregion
 
+    # region Escala dos icones
+    # Centraliza cada GLB e ajusta sua maior dimensao ao tamanho definido para a tela.
     @staticmethod
     def _modelo(nome, pai, cor, tamanho):
         entidade = Entity(parent=pai,
@@ -37,11 +39,14 @@ class IndicadorVetor:
         entidade.model.setPos(-(minimo + maximo) / 2)
         entidade.scale = tamanho / max(maximo - minimo)
         return entidade
+    # endregion
 
+    # region Projecao na camera
+    # Usa cruz ou ponto a menos de 28 graus do eixo visual; volta a seta acima de 35 graus para
+    # evitar oscilacao.
     def update(self, direcao, ativo):
         local = camera.getRelativeVector(scene, direcao).normalized()
-        # Histerese: entra no modo ponto/cruz a ~28 graus do eixo visual,
-        # e so volta a seta alem de ~35 graus, evitando piscadas no limite.
+
         limite = 0.82 if self.modo in ('entrada', 'saida') else 0.88
         if abs(local.z) >= limite:
             self.modo = 'entrada' if local.z > 0 else 'saida'
@@ -54,11 +59,12 @@ class IndicadorVetor:
         texto = self.nome if ativo else f'{self.nome} = 0'
         if self.rotulo.text != texto:
             self.rotulo.text = texto
+    # endregion
 
 
+# region Coluna de vetores
+# As posicoes seguem a ordem da legenda. Apenas as direcoes e os simbolos acompanham a camera.
 class VetoresEletron:
-    """Coluna fixa na UI; somente a orientacao dos vetores segue a camera."""
-
     def __init__(self):
         self.indicadores = {
             chave: IndicadorVetor(rotulo, cor)
@@ -67,8 +73,6 @@ class VetoresEletron:
         self._posicionar_indicadores()
 
     def _posicionar_indicadores(self):
-        # Reserva espaco para icone, rotulo e margem direita. A ordem da
-        # legenda permanece estavel ao orbitar, dar zoom ou mover a camera.
         x = window.aspect_ratio / 2 - 0.22
         for linha, indicador in enumerate(self.indicadores.values()):
             indicador.grupo.position = (x, 0.10 - linha * 0.075, 0)
@@ -78,3 +82,4 @@ class VetoresEletron:
         for chave, direcao in zip(('velocidade', 'campo', 'forca'), direcoes):
             self.indicadores[chave].update(direcao, chave == 'velocidade' or campo_ativo)
         self._posicionar_indicadores()
+# endregion

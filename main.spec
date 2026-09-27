@@ -1,8 +1,9 @@
-# -*- mode: python ; coding: utf-8 -*-
 from pathlib import Path
 
 from PyInstaller.utils.hooks import collect_all
 
+# region Recursos do executavel
+# Inclui os modelos GLB e as dependencias do Ursina e do Panda3D.
 project_dir = Path(SPECPATH)
 datas = [(str(project_dir / 'models'), 'models')]
 binaries = []
@@ -12,8 +13,11 @@ for package in ('panda3d', 'direct', 'ursina'):
     datas.extend(package_datas)
     binaries.extend(package_binaries)
     hiddenimports.extend(package_imports)
+# endregion
 
 
+# region Codigo Python
+# Empacota main.py e seus modulos, sem a pasta de testes.
 a = Analysis(
     [str(project_dir / 'main.py')],
     pathex=[str(project_dir)],
@@ -28,7 +32,10 @@ a = Analysis(
     optimize=0,
 )
 pyz = PYZ(a.pure)
+# endregion
 
+# region Arquivo final
+# Gera main.exe com codigo, bibliotecas e modelos no mesmo arquivo.
 exe = EXE(
     pyz,
     a.scripts,
@@ -49,3 +56,4 @@ exe = EXE(
     codesign_identity=None,
     entitlements_file=None,
 )
+# endregion

@@ -17,9 +17,10 @@ python -m venv .venv
 | Comando | Ação |
 | --- | --- |
 | `M` | Aproximar ou afastar o ímã |
-| `I` | Inverter o sentido do movimento |
+| `I` | Inverter a corrente e girar a pilha |
 | `F` | Inverter os polos do ímã |
 | `H` | Mostrar ou esconder a ajuda |
+| Botão `Sair` | Encerrar o simulador |
 | Botão direito do mouse | Girar a câmera |
 | Roda do mouse | Aproximar ou afastar a câmera |
 
@@ -30,6 +31,10 @@ ficam juntos na faixa inferior, com os valores exibidos apenas nos rótulos.
 Os indicadores ficam em uma coluna fixa à direita, na ordem da legenda,
 sem trocar de posição ao girar ou aproximar a câmera. Apenas a orientação
 das setas e os símbolos de entrada/saída acompanham o ângulo observado.
+A pilha usa um modelo independente e gira 180° no eixo Y ao inverter a corrente
+com `I`. Um giro compensatorio no eixo longitudinal do corpo mantém os sinais
+`+` e `-` voltados para dentro do circuito. Uma nova inversão restaura a orientação inicial.
+O circuito usa `circuito_sem_pilha.glb`, e a pilha usa `pilha.glb`.
 
 ## Organização
 

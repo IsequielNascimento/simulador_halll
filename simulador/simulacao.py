@@ -1,4 +1,3 @@
-"""Cena e estado da simulacao; conecta os controles, particulas e vetores."""
 from ursina import EditorCamera, Entity, camera, color, invoke, time
 
 from . import config
@@ -9,8 +8,8 @@ from .vetores import VetoresEletron
 
 
 class SimulacaoHall(Entity):
-    """O Ursina chama input e update desta entidade automaticamente."""
-
+    # region Estado inicial
+    # Comeca com o ima afastado e as particulas no percurso sem desvio.
     def __init__(self):
         super().__init__()
         self.magneto_baixo = False
@@ -25,20 +24,31 @@ class SimulacaoHall(Entity):
         self.sistema_circuito = SistemaBolinhasCircuito(percurso)
         self.sistema_hall = SistemaBolinhasHall(percurso, config.PLACA, config.B_MAX)
         self.sistema_atual = self.sistema_circuito
+    # endregion
 
+    # region Cena e pivos
+    # Pilha e ima giram pelo centro dos modelos; o circuito permanece fixo.
     def _criar_cena(self):
         self.camera_editor = EditorCamera(rotation=(45, 0, 0), position=(0.35, -0.4, 0))
         camera.z = -13
         self.camera_editor.target_z = camera.z
-        self.modelo = Entity(model='models/placa_bateria_fio.glb', scale=0.02)
+        self.modelo = Entity(model='models/circuito_sem_pilha.glb', scale=0.02)
+        self.pilha = Entity(scale=0.02)
+        self.corpo_pilha = Entity(parent=self.pilha, model='models/pilha.glb')
+        minimo, maximo = self.corpo_pilha.model.getTightBounds()
+        centro = (minimo + maximo) / 2
+        self.corpo_pilha.model.setPos(-centro)
+        self.pilha.position = centro * self.pilha.scale_x
         self.chao = Entity(model='plane', scale=20, color=color.dark_gray, y=-1)
         self.ima = Entity(model='models/ima.glb', scale=0.02,
                           position=(config.PLACA.centro_x, 2.5, config.PLACA.centro_z))
-        # Centraliza o pivo para o ima girar sobre si mesmo.
         limites = self.ima.model.getTightBounds()
         if limites:
             self.ima.model.setPos(-(limites[0] + limites[1]) / 2)
+    # endregion
 
+    # region Teclado
+    # M, I e F respeitam o intervalo entre comandos. H alterna a ajuda a qualquer momento.
     def input(self, key):
         if key == 'h':
             self.interface.alternar_ajuda()
@@ -48,14 +58,28 @@ class SimulacaoHall(Entity):
         if key == 'm':
             self._acionar_ima()
         elif key == 'i':
-            self.sentido_corrente *= -1
+            self._inverter_corrente()
         elif key == 'f':
             self.magneto_invertido = not self.magneto_invertido
             self.ima.animate_rotation_z(self.ima.rotation_z + 180, duration=0.6)
         else:
             return
         self.cooldown_restante = config.COOLDOWN_TECLAS
+    # endregion
 
+    # region Inversao da corrente e da pilha
+    # O giro em Y troca os terminais; o giro local em Z mantem os sinais voltados para dentro.
+    def _inverter_corrente(self):
+        self.sentido_corrente *= -1
+
+        angulo = 180 if self.sentido_corrente < 0 else 0
+        self.pilha.animate_rotation_y(angulo, duration=0.6)
+
+        self.corpo_pilha.animate_rotation_z(angulo, duration=0.6)
+    # endregion
+
+    # region Entrada e saida do campo na placa
+    # Troca o sistema de particulas ao terminar o deslocamento do ima.
     def _acionar_ima(self):
         self.magneto_baixo = not self.magneto_baixo
         altura = config.Y_IMA_BAIXO if self.magneto_baixo else config.Y_IMA_CIMA
@@ -75,7 +99,11 @@ class SimulacaoHall(Entity):
     def _ativar_circuito(self):
         self.sistema_circuito.set_ativo(True)
         self.sistema_atual = self.sistema_circuito
+    # endregion
 
+    # region Atualizacao por quadro
+    # Os sliders definem I e B. A velocidade visual varia com I; a tensao usa B = 0 com o ima
+    # afastado.
     def update(self):
         self.cooldown_restante = max(0.0, self.cooldown_restante - time.dt)
         corrente_ma = self.interface.corrente_ma
@@ -99,3 +127,4 @@ class SimulacaoHall(Entity):
             self.sentido_corrente, sinal_polo,
             self.magneto_baixo and self.sistema_hall.ativo and campo_mt > 0,
         )
+    # endregion

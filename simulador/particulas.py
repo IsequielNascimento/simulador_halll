@@ -1,4 +1,3 @@
-"""Animacao dos portadores no circuito e do acumulo nas bordas da placa."""
 import math
 
 from ursina import Entity, Vec3, clamp, color
@@ -9,9 +8,9 @@ from .config import (
 )
 
 
+# region Percurso fechado
+# Converte distancia percorrida em posicao nos segmentos e retorna ao inicio ao completar a volta.
 class Percurso:
-    """Segmentos e interpolacao de um caminho fechado, compartilhados pelos sistemas."""
-
     def __init__(self, pontos):
         self.pontos = pontos
         self.segmentos = []
@@ -35,11 +34,12 @@ class Percurso:
                 t = (distancia - inicio) / comprimento if comprimento > 0 else 0
                 return p1 + (p2 - p1) * t
         return self.pontos[0]
+# endregion
 
 
+# region Movimento no circuito
+# Distribui particulas pelo fio e avanca cada uma por velocidade vezes tempo.
 class SistemaBolinhasCircuito:
-    """Criacao, visibilidade e movimento comuns aos dois sistemas de particulas."""
-
     def __init__(self, percurso, espacamento=0.25, cor=color.red, ativo=True):
         self.percurso = percurso
         self.ativo = ativo
@@ -69,32 +69,30 @@ class SistemaBolinhasCircuito:
 
     def _avancar_bola(self, bola, deslocamento):
         return self._posicao_no_caminho(self.progresso + bola['offset'])
+# endregion
 
 
 class SistemaBolinhasHall(SistemaBolinhasCircuito):
-    """Trajetorias esquematicas com desvio lateral e marcadores nas bordas.
-
-    O desvio usa a raiz das fracoes de corrente/campo e saturacao exponencial.
-    E uma animacao didatica; a tensao Hall e calculada separadamente em fisica.
-    """
-
+    # region Ajustes do desvio visual
+    # K define a saturacao da curva; a margem limita o alcance antes do corte nas bordas.
     K_SATURACAO = 4.0
-    MARGEM_PAREDE = 0.98  # o clamp final (x_min/x_max) ja protege 100% do fisico
+    MARGEM_PAREDE = 0.98
+    # endregion
 
+    # region Estado do desvio e das bordas
+    # B inclui o sinal dos polos; a fracao de corrente vai de 0 a 1. Vermelho e azul ocupam bordas
+    # opostas.
     def __init__(self, percurso, placa, b_max_mt, espacamento=0.25, cor=color.red):
         self.placa = placa
         self.dist_inicio_placa, self.dist_fim_placa = percurso.intervalo(placa.segmento_caminho)
         self.b_max_mt = b_max_mt
-        self.campo_b_mt = 0       # ja vem com sinal (polo invertido = negativo)
-        self.frac_corrente = 0    # 0 a 1, proporcao da corrente atual
-        self.sentido = 1          # 1 = corrente normal, -1 = invertida
+        self.campo_b_mt = 0
+        self.frac_corrente = 0
+        self.sentido = 1
 
-        # marcadores fixos de acumulacao: ate max_acumulados_atual vermelhos na parede
-        # que o feixe atinge, e o mesmo tanto de azuis na parede oposta (o teto cresce
-        # MARCADORES_POR_FAIXA a cada FAIXA_CORRENTE_MA de corrente)
-        self.lado_atual = None       # 'max' ou 'min' -- qual parede esta acumulando agora
+        self.lado_atual = None
         self.contagem_acumulada = 0
-        self.corrente_mA = 20        # espelha o default do slider; atualizado a cada frame
+        self.corrente_mA = 20
         self.max_acumulados_atual = self._calcular_max_acumulados()
         self.marcador_zs = [placa.minimo.z + (i + 1) * (placa.maximo.z - placa.minimo.z) / (MAX_MARCADORES_POSSIVEL + 1)
                             for i in range(MAX_MARCADORES_POSSIVEL)]
@@ -104,7 +102,11 @@ class SistemaBolinhasHall(SistemaBolinhasCircuito):
                                   for _ in range(MAX_MARCADORES_POSSIVEL)]
 
         super().__init__(percurso, espacamento, cor, ativo=False)
+    # endregion
 
+    # region Desvio visual na placa
+    # Usa raiz das fracoes de I e B e saturacao exponencial; nao calcula a trajetoria fisica. Para v
+    # em +Z e B em -Y, F aponta para -X.
     def _posicao_no_caminho(self, distancia):
         distancia_original = distancia
         distancia = distancia % self.percurso.comprimento_total
@@ -122,21 +124,21 @@ class SistemaBolinhasHall(SistemaBolinhasCircuito):
                 frac_hall = -frac_hall
             frac_hall *= FATOR_DEFLEXAO_VISUAL
 
-            curva = 1 - math.exp(-self.K_SATURACAO * t_local)  # satura rapido, "cola" na parede
+            curva = 1 - math.exp(-self.K_SATURACAO * t_local)
 
             alcance_max = self.MARGEM_PAREDE * (self.placa.maximo.x - self.placa.eixo_corrente)
-            # Eletron: q < 0. Com v em +Z e B em -Y (N voltado para
-            # a placa), q(v x B) aponta para -X.
+
             desvio = -self.sentido * frac_hall * curva * alcance_max
             x = clamp(self.placa.eixo_corrente + desvio, self.placa.minimo.x, self.placa.maximo.x)
             return Vec3(x, p1.y, z)
 
-        # Normaliza apenas uma vez, preservando o arredondamento no fechamento do circuito.
         return super()._posicao_no_caminho(distancia_original)
+    # endregion
 
+    # region Acumulo nas bordas
+    # O limite cresce por faixas de corrente, com pelo menos uma faixa. O lado atingido recebe
+    # marcadores vermelhos.
     def _calcular_max_acumulados(self):
-        # 1 faixa (MARCADORES_POR_FAIXA marcadores) garantida mesmo com pouca corrente;
-        # a cada FAIXA_CORRENTE_MA adicionais, libera mais MARCADORES_POR_FAIXA
         faixas = max(1, int(self.corrente_mA // FAIXA_CORRENTE_MA))
         return faixas * MARCADORES_POR_FAIXA
 
@@ -151,11 +153,14 @@ class SistemaBolinhasHall(SistemaBolinhasCircuito):
             if ativo:
                 self.marcadores_vermelhos[i].position = Vec3(x_vermelho, y, self.marcador_zs[i])
                 self.marcadores_azuis[i].position = Vec3(x_azul, y, self.marcador_zs[i])
+    # endregion
 
+    # region Visibilidade do acumulo
+    # Limpa os marcadores ao desativar o sistema ou zerar B. A animacao tambem os limpa abaixo de 20
+    # mA.
     def set_ativo(self, ativo):
         super().set_ativo(ativo)
         if not ativo:
-            # desligou o sistema (ima subiu) -- zera o acumulo tambem
             self.lado_atual = None
             self.contagem_acumulada = 0
             for m in self.marcadores_vermelhos + self.marcadores_azuis:
@@ -172,9 +177,6 @@ class SistemaBolinhasHall(SistemaBolinhasCircuito):
             self.contagem_acumulada = min(self.contagem_acumulada, self.max_acumulados_atual)
             self._atualizar_marcadores()
 
-        # sem campo B (ou sem corrente) nao existe efeito Hall de verdade --
-        # zera na hora qualquer marcador que tenha ficado acumulado de antes,
-        # em vez de deixar bolinha "fantasma" grudada na parede
         if self.campo_b_mt == 0 or self.frac_corrente == 0 or self.corrente_mA < 20:
             if self.lado_atual is not None or self.contagem_acumulada != 0:
                 self.lado_atual = None
@@ -182,12 +184,14 @@ class SistemaBolinhasHall(SistemaBolinhasCircuito):
                 self._atualizar_marcadores()
 
         super().update(velocidade, delta_t)
+    # endregion
 
+    # region Chegada a borda
+    # Registra o acumulo e recoloca a particula no inicio do percurso, junto ao terminal preto.
     def _avancar_bola(self, bola, deslocamento):
         bola['progresso'] += deslocamento
         pos = self._posicao_no_caminho(bola['progresso'])
 
-        # bateu na parede de verdade (x_min ou x_max) -> volta pra parte_preta
         bateu_na_parede = (math.isclose(pos.x, self.placa.minimo.x, abs_tol=1e-3)
                             or math.isclose(pos.x, self.placa.maximo.x, abs_tol=1e-3))
         if bateu_na_parede:
@@ -199,7 +203,7 @@ class SistemaBolinhasHall(SistemaBolinhasCircuito):
             self._atualizar_marcadores()
 
             bola['progresso'] = 0
-            pos = self.percurso.pontos[0]  # parte_preta
+            pos = self.percurso.pontos[0]
 
         return pos
-
+    # endregion
