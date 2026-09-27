@@ -18,14 +18,19 @@ def formatar_tensao(v_volts):
 
 class InterfaceSimulador:
     def __init__(self):
-        self.texto_sentido = Text(text='Sentido: normal', position=(-0.08, -0.15), scale=1.2)
+        self.controles = Text(
+            text=('COMANDOS: M: Acionar o ima | I: Inverter a corrente | '
+                  'F: Virar o ima | H: Ajuda'),
+            position=(-0.5, -0.40), scale=0.85,
+        )
+        self.texto_sentido = Text(text='Sentido: normal', position=(-0.5, -0.15), scale=1.2)
         self.texto_cooldown = Text(text='', position=(-0.85, -0.47), scale=1.1, color=color.yellow)
         self.corrente_slider = Slider(min=CORRENTE_MIN_MA, max=CORRENTE_MAX_MA,
-                                      default=20, step=1, dynamic=True, x=0, y=-0.35)
-        self.texto_corrente = Text(text='Corrente: 20 mA', position=(-0.08, -0.28), scale=1.3)
+                                      default=20, step=1, dynamic=True, x=-0.1, y=-0.22)
+        self.texto_corrente = Text(text='Corrente: 20 mA', position=(-0.5, -0.21), scale=1.3)
         self.b_slider = Slider(min=B_MIN, max=B_MAX, default=50, step=10,
-                               dynamic=True, x=0, y=-0.48)
-        self.texto_b = Text(text='Campo B: 50 mT', position=(-0.08, -0.41), scale=1.3)
+                               dynamic=True, x=-0.1, y=-0.32)
+        self.texto_b = Text(text='Campo B: 50 mT', position=(-0.5, -0.31), scale=1.3)
         self.texto_voltimetro = Text(text='Voltimetro (V_H): 0 nV', position=(-0.15, 0.46),
                                     scale=1.5, origin=(0, 0))
         self._criar_ajuda()
