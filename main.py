@@ -13,6 +13,7 @@ if hasattr(sys, '_MEIPASS'):
 # ---- constantes ajustaveis ----
 FATOR_DEFLEXAO_VISUAL = 2  # exagero de proposito pra ficar visivel; 1.0 = fisicamente "correto"
 COOLDOWN_TECLAS = 1.0        # segundos de espera entre acionar M / I / F (evita clique duplo/simultaneo)
+POPUP_DURACAO_INICIAL = 2.0  # segundos que o popup de comandos fica visivel sozinho, antes de sumir
 MARCADORES_POR_FAIXA = 3     # quantas bolinhas novas liberam a cada faixa de corrente atingida
 FAIXA_CORRENTE_MA = 20       # tamanho de cada faixa de corrente, em mA
 CORRENTE_MIN_MA = 2          # espelha o min do slider de corrente (definido mais abaixo)
@@ -331,12 +332,14 @@ def ativar_hall():
     global sistema_atual
     sistema_hall.set_ativo(True)
     sistema_atual = sistema_hall
+    atualizar_indicador_campo()
 
 
 def ativar_circuito():
     global sistema_atual
     sistema_circuito.set_ativo(True)
     sistema_atual = sistema_circuito
+    atualizar_indicador_campo()
 
 
 def flip_ima():
@@ -345,6 +348,102 @@ def flip_ima():
     global magneto_invertido
     magneto_invertido = not magneto_invertido
     ima.animate_rotation_z(ima.rotation_z + 180, duration=0.6)
+    invoke(atualizar_indicador_campo, delay=0.6)  # espera a animacao terminar
+
+
+# ---- indicador de campo B espalhado pela placa: uma grade de aneis (so ligam
+# com o ima), cada um com um simbolo que troca conforme a polaridade ----
+Y_MARCADOR = 0.25  # bem rente a placa
+GRADE_CAMPO_COLUNAS = 3
+GRADE_CAMPO_LINHAS = 2
+MARGEM_GRADE = 0.15  # afasta a grade um pouco das bordas da placa
+
+
+def _gerar_pontos_grade(x_min, x_max, z_min, z_max, colunas, linhas, margem):
+    pontos = []
+    largura = max(x_max - x_min - 2 * margem, 0.01)
+    profundidade = max(z_max - z_min - 2 * margem, 0.01)
+    for c in range(colunas):
+        for l in range(linhas):
+            tx = (c + 0.5) / colunas
+            tz = (l + 0.5) / linhas
+            x = x_min + margem + tx * largura
+            z = z_min + margem + tz * profundidade
+            pontos.append((x, z))
+    return pontos
+
+
+def _criar_com_pivo_proprio(caminho_modelo, x, z, escala=0.02):
+    """Cria a Entity e recentraliza o pivo dela (nao confia no y/origem que
+    veio da exportacao -- cada peca pode ter um offset diferente)."""
+    e = Entity(model=caminho_modelo, scale=escala, position=(x, Y_MARCADOR, z), enabled=False)
+    b = e.model.getTightBounds()
+    if b:
+        c = (b[0] + b[1]) / 2
+        e.model.setPos(-c)
+    return e
+
+
+_pontos_grade_campo = _gerar_pontos_grade(
+    PLACA_X_MIN, PLACA_X_MAX, PLACA_Z_MIN, PLACA_Z_MAX,
+    GRADE_CAMPO_COLUNAS, GRADE_CAMPO_LINHAS, MARGEM_GRADE
+)
+
+ESCALA_INDICADOR_CAMPO = 0.012  # era 0.02 (mesma escala do resto) -- ajusta aqui se quiser maior/menor
+
+aneis_campo_b = [_criar_com_pivo_proprio('models/anel_b.glb', x, z, ESCALA_INDICADOR_CAMPO) for x, z in _pontos_grade_campo]
+marcadores_positivos = [_criar_com_pivo_proprio('models/mais.glb', x, z, ESCALA_INDICADOR_CAMPO) for x, z in _pontos_grade_campo]
+marcadores_negativos = [_criar_com_pivo_proprio('models/bola.glb', x, z, ESCALA_INDICADOR_CAMPO) for x, z in _pontos_grade_campo]
+
+# ---- espacinho pra calibrar a rotacao do anel na mao -- mexe nos 3 numeros
+# abaixo (em graus) e testa ate o anel ficar do jeito certo ----
+ANGULO_ANEL_X = 0
+ANGULO_ANEL_Y = 90
+ANGULO_ANEL_Z = 0
+for _anel in aneis_campo_b:
+    _anel.rotation = (ANGULO_ANEL_X, ANGULO_ANEL_Y, ANGULO_ANEL_Z)
+
+
+def atualizar_indicador_campo():
+    ativo = magneto_baixo
+    for anel in aneis_campo_b:
+        anel.enabled = ativo
+    for m in marcadores_positivos:
+        m.enabled = ativo and not magneto_invertido
+    for m in marcadores_negativos:
+        m.enabled = ativo and magneto_invertido
+
+
+# ---- setas de corrente, uma em cada quina do FIO (nao da placa) ----
+Y_SETA = 0.4  # separado do Y_MARCADOR do campo -- nao precisam estar na mesma altura
+
+# angulo (rotation_y) calibrado manualmente por seta -- o calculo "puro" pela
+# direcao do segmento (0=+x, 90=+z, 180=-x, 270=-z) nao bate certinho com o
+# jeito que o seta.glb foi exportado, entao cada seta tem seu proprio angulo
+# pro estado normal e pro estado invertido (tecla I). Se alguma ainda ficar
+# torta, ajusta só o numero dela aqui embaixo.
+# ordem: [seta1 (quina1), seta2 (quina2), seta3 (quina3), seta4 (quina4)]
+_quinas_fio = [caminho[1], caminho[2], caminho[5], caminho[6]]  # quina1/2/3/4 do fio
+ANGULOS_SETAS_NORMAL = [0, 270, 180, 90]
+ANGULOS_SETAS_INVERTIDO = [270, 180, 90, 0]
+
+setas_corrente = []
+for _q in _quinas_fio:
+    _seta = Entity(model='models/seta.glb', scale=0.02, position=(_q.x, Y_SETA, _q.z))
+    # cada seta recentraliza o proprio pivo (nao confia no y/origem que o
+    # Tinkercad gravou na malha -- cada peca pode ter um offset diferente,
+    # igual aconteceu com o ima)
+    _b = _seta.model.getTightBounds()
+    if _b:
+        _c = (_b[0] + _b[1]) / 2
+        _seta.model.setPos(-_c)
+    setas_corrente.append(_seta)
+
+
+def atualizar_setas_corrente():
+    angulos = ANGULOS_SETAS_NORMAL if sentido_corrente > 0 else ANGULOS_SETAS_INVERTIDO
+    for _seta, _angulo in zip(setas_corrente, angulos):
+        _seta.rotation_y = _angulo
 
 
 # ---- sentido da corrente ----
@@ -356,10 +455,15 @@ def inverter_corrente():
     global sentido_corrente
     sentido_corrente *= -1
     texto_sentido.text = 'Sentido: normal' if sentido_corrente > 0 else 'Sentido: invertido'
+    atualizar_setas_corrente()
 
 
-# ---- popup de comandos (H mostra/esconde) ----
+atualizar_setas_corrente()  # orientacao inicial das setas, condizente com sentido_corrente = 1
+
+
+# ---- popup de comandos (H mostra/esconde -- some sozinho depois de POPUP_DURACAO_INICIAL) ----
 popup_comandos = Entity(parent=camera.ui, enabled=True)
+popup_tempo_restante = POPUP_DURACAO_INICIAL
 Entity(parent=popup_comandos, model='quad', scale=(0.6, 0.42),
        color=color.rgba(0, 0, 0, 210), z=0.1)
 Text(
@@ -434,7 +538,12 @@ VELOCIDADE_MAX = 3.0
 
 
 def update():
-    global cooldown_restante
+    global cooldown_restante, popup_tempo_restante
+    if popup_tempo_restante > 0:
+        popup_tempo_restante -= time.dt
+        if popup_tempo_restante <= 0:
+            popup_comandos.enabled = False
+
     if cooldown_restante > 0:
         cooldown_restante = max(0.0, cooldown_restante - time.dt)
     texto_cooldown.text = f'Cooldown: {cooldown_restante:.1f}s' if cooldown_restante > 0 else ''
